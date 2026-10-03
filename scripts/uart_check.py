@@ -33,7 +33,8 @@ class Serial:
     """Minimal raw 8N1 serial port."""
 
     def __init__(self, path, baud=termios.B115200):
-        self.fd = os.open(path, os.O_RDWR | os.O_NOCTTY)
+        # O_NONBLOCK so open() can't wait for carrier detect; blocking I/O is restored once CLOCAL is set.
+        self.fd = os.open(path, os.O_RDWR | os.O_NOCTTY | os.O_NONBLOCK)
         attrs = termios.tcgetattr(self.fd)
         attrs[0] = 0                                               # iflag: raw
         attrs[1] = 0                                               # oflag: raw
@@ -41,6 +42,7 @@ class Serial:
         attrs[3] = 0                                               # lflag: no echo/canonical
         attrs[4] = attrs[5] = baud
         termios.tcsetattr(self.fd, termios.TCSANOW, attrs)
+        os.set_blocking(self.fd, True)
         self.buf = b""
 
     def __enter__(self):

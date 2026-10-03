@@ -51,6 +51,24 @@ class ParseStatusTest(unittest.TestCase):
                 self.assertIsNone(uart_check.parse_status(line))
 
 
+class SerialOpenTest(unittest.TestCase):
+    def test_opens_without_waiting_for_carrier_then_blocks_normally(self):
+        board = FakeBoard()
+        flags = []
+        real_open = os.open
+        def spy(path, f, *a):
+            flags.append(f)
+            return real_open(path, f, *a)
+        uart_check.os.open = spy
+        try:
+            with uart_check.Serial(board.port) as ser:
+                self.assertTrue(flags[0] & os.O_NONBLOCK, "open must not block on carrier detect")
+                self.assertTrue(os.get_blocking(ser.fd), "reads/writes should block after setup")
+        finally:
+            uart_check.os.open = real_open
+            board.close()
+
+
 class QueryTest(unittest.TestCase):
     def test_query_returns_status(self):
         board = FakeBoard(on_query=status(0, 1, 2))
