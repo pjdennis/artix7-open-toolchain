@@ -21,17 +21,38 @@ The attachment is lost when WSL restarts; re-run the script.
 ```sh
 make                                     # all simulations + host-script tests
 cd designs/cmod_a7_demo
-make            # simulate, then build build/top.bit (~12 s)
-make prog       # load into FPGA SRAM (lost at power-off)
+make            # simulate, then build build/top.bit and build/top.fast.bit (~12 s)
+make prog       # load into FPGA SRAM in ~0.25 s (lost at power-off)
 make hwcheck    # ask the running design for its status over the USB-UART
 make buttons    # guided test: you press BTN0/BTN1, the script verifies the reports
-make flash      # write QSPI flash (~2 min incl. verify); boots from flash in ~4 s at power-up
+make flash      # write QSPI flash (~7 s incl. verify); boots from flash in ~30 ms
 make reset      # reconfigure the FPGA from flash
 make detect     # show the JTAG chain (expect IDCODE 0x0362D093)
 make backup-flash   # timestamped dump of the 4 MiB flash into flash-backups/
 ```
 
 The first `make flash` on a machine dumps whatever was in flash to `flash-backups/<board>-first.bin`.
+
+## Fast loading
+
+`prog` and `flash` use `build/top.fast.bit`, made by `scripts/xc7bit.py` from the full bitstream:
+
+- **Only data-carrying frames.** xc7frames2bit writes every configuration frame of the device
+  (2.1 MB), but configuration memory is cleared before every load, so all-zero frames can be
+  skipped. The demo uses 189 of 5,408 frames, giving a 97 KB file, 23x smaller. The build
+  decodes both bitstreams with `bitread` and fails if their frames differ.
+- **Faster flash clock.** `OSCFSEL` in the board file sets the clock the FPGA uses to read flash
+  at boot (Vivado's ConfigRate). The encoding isn't documented; these values were measured on
+  this board: 0 = 3.3 MHz (default), 4 = 23 MHz, 6 = ~31 MHz (used), 8 = ~37 MHz.
+
+| | Full bitstream, default clock | Fast |
+|---|---|---|
+| `make prog` | 3.35 s | 0.25 s |
+| `make flash` | ~2 min | ~7 s |
+| Flash boot (reconfigure until the design answers) | ~4 s | ~30 ms |
+
+To use the full bitstream, pass `LOAD_BIT=build/top.bit`, e.g. `make prog LOAD_BIT=build/top.bit`.
+`python3 scripts/xc7bit.py info <file.bit>` prints a bitstream's configuration commands.
 
 ## Demo design (`designs/cmod_a7_demo`)
 
@@ -73,5 +94,6 @@ tests/                   tests for the host scripts
   configuration.
 - **`bit2fasm` in the openXC7 release** calls `bitread` through a `/nix/store/.../sh` path that
   doesn't exist. Run `bitread` yourself and feed the `.bits` file to the disassembler instead.
-- **Flash boot speed:** the bitstream uses the default single-bit SPI flash mode. Boot takes
-  about 4 s after power-up or `make reset`.
+- **Flash read width:** flash boot still reads one bit at a time. Four-bit (quad) mode would need
+  bus-width detection words in the bitstream and the flash's quad-enable bit set, and at ~30 ms
+  per boot it isn't worth it.
