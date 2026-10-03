@@ -15,7 +15,7 @@ BITREAD := bitread --part_file $(PART_YAML) -C -z
 LOADER := openFPGALoader -b $(BOARD)
 
 # The first flash write on a machine saves whatever was there before (e.g. a Vivado design).
-BACKUP_DIR := $(REPO_ROOT)/flash-backups
+BACKUP_DIR := $(KIT_ROOT)/flash-backups
 BACKUPS    := $(BACKUP_DIR)/$(BOARD)-first.bin
 
 .PHONY: bit prog flash backup-flash detect reset clean
@@ -39,7 +39,7 @@ $(BIT): $(BUILD)/$(TOP).frames
 # Only the frames that carry data (see scripts/xc7bit.py), checked by decoding both bitstreams.
 $(FAST_BIT): $(BIT)
 	$(BITREAD) -o $(BIT).frames $< > /dev/null
-	python3 $(REPO_ROOT)/scripts/xc7bit.py compact $< $(BIT).frames $@ $(if $(OSCFSEL),--oscfsel $(OSCFSEL))
+	python3 $(KIT_ROOT)/scripts/xc7bit.py compact $< $(BIT).frames $@ $(if $(OSCFSEL),--oscfsel $(OSCFSEL))
 	$(BITREAD) -o $@.frames $@ > /dev/null
 	@cmp -s $(BIT).frames $@.frames || { rm -f $@; echo "*** $@ decodes to different frames than $<"; exit 1; }
 

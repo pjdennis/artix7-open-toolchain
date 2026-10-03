@@ -16,7 +16,7 @@ include ../../mk/openxc7.mk
 .PHONY: all hwtest
 all: test bit
 
-CHECK := python3 $(REPO_ROOT)/scripts/bram_check.py
+CHECK := python3 $(KIT_ROOT)/scripts/bram_check.py
 hwtest: $(FAST_BIT) $(BIT)
 	@for b in $(FAST_BIT) $(BIT); do \
 	  echo "== JTAG load: $$b"; $(LOADER) $$b > /dev/null 2>&1 && $(CHECK) check && $(CHECK) selftest || exit 1; \

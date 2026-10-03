@@ -18,7 +18,7 @@ include ../../mk/openxc7.mk
 all: test bit
 
 hwcheck:
-	python3 $(REPO_ROOT)/scripts/uart_check.py query
+	python3 $(KIT_ROOT)/scripts/uart_check.py query
 
 buttons:
-	python3 $(REPO_ROOT)/scripts/uart_check.py buttons
+	python3 $(KIT_ROOT)/scripts/uart_check.py buttons
