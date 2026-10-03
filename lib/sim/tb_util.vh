@@ -3,15 +3,16 @@
 `ifndef TB_UTIL_VH
 `define TB_UTIL_VH
 
-`define CHECK(cond, msg) \
-  if (!(cond)) begin \
-    $display("FAIL %s:%0d @%0t: %s", `__FILE__, `__LINE__, $time, msg); \
+`define CHECK(cond_, msg_) \
+  if (!(cond_)) begin \
+    $display("FAIL %s:%0d @%0t: %s", `__FILE__, `__LINE__, $time, msg_); \
     $fatal(1); \
   end
 
-`define CHECK_EQ(got, exp, msg) \
-  if ((got) !== (exp)) begin \
-    $display("FAIL %s:%0d @%0t: %s: got %0h, expected %0h", `__FILE__, `__LINE__, $time, msg, got, exp); \
+// (iverilog expands macro arguments inside string literals, hence the unusual parameter names)
+`define CHECK_EQ(actual_, expected_, msg_) \
+  if ((actual_) !== (expected_)) begin \
+    $display("FAIL %s:%0d @%0t: %s: got %0h, expected %0h", `__FILE__, `__LINE__, $time, msg_, actual_, expected_); \
     $fatal(1); \
   end
 
