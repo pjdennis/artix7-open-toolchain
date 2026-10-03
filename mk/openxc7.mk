@@ -2,12 +2,15 @@
 # Inputs: TOP, RTL (synthesis sources), XDC, and a board file (boards/*.mk) providing
 #         PART, FAMILY, CHIPDB_DIE, BOARD, CLK_MHZ, FLASH_BYTES and optionally OSCFSEL.
 # prog/flash use the compact bitstream ($(TOP).fast.bit); pass LOAD_BIT=build/$(TOP).bit for the full one.
+# fast.bit also guards against the JTAG/flash race (see scripts/xc7bit.py): its flash boot waits
+# BOOT_DELAY_MS before writing anything, and a JTAG load of it redoes startup if a flash design got there first.
 include $(dir $(lastword $(MAKEFILE_LIST)))tools.mk
 
 BUILD  ?= build
 CHIPDB ?= $(OPENXC7_ROOT)/chipdb/chipdb-$(CHIPDB_DIE).bin
 DB     := $(PRJXRAY_DB)/$(FAMILY)
 BIT    := $(BUILD)/$(TOP).bit
+BOOT_DELAY_MS ?= 100
 FAST_BIT := $(BUILD)/$(TOP).fast.bit
 LOAD_BIT ?= $(FAST_BIT)
 PART_YAML := $(DB)/$(PART)/part.yaml
@@ -42,7 +45,8 @@ $(BIT): $(BUILD)/$(TOP).frames
 # Only the frames that carry data (see scripts/xc7bit.py), checked by decoding both bitstreams.
 $(FAST_BIT): $(BIT)
 	$(BITREAD) -o $(BIT).frames $< > /dev/null
-	python3 $(KIT_ROOT)/scripts/xc7bit.py compact $< $(BIT).frames $@ $(if $(OSCFSEL),--oscfsel $(OSCFSEL))
+	python3 $(KIT_ROOT)/scripts/xc7bit.py compact $< $(BIT).frames $@ $(if $(OSCFSEL),--oscfsel $(OSCFSEL)) \
+	  --restart --boot-delay-ms $(BOOT_DELAY_MS)
 	$(BITREAD) -o $@.frames $@ > /dev/null
 	@cmp -s $(BIT).frames $@.frames || { rm -f $@; echo "*** $@ decodes to different frames than $<"; exit 1; }
 
