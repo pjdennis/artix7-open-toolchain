@@ -6,7 +6,7 @@ include $(dir $(lastword $(MAKEFILE_LIST)))tools.mk
 SIM_BUILD ?= build/sim
 TBS       := $(wildcard $(TB_DIR)/tb_*.v)
 TB_PASS   := $(patsubst $(TB_DIR)/%.v,$(SIM_BUILD)/%.pass,$(TBS))
-IVERILOG  := iverilog -g2012 -Wall -I $(REPO_ROOT)/lib/sim
+IVERILOG  := iverilog -g2012 -Wall -I $(REPO_ROOT)/lib/sim $(addprefix -I ,$(sort $(dir $(RTL))))
 
 .PHONY: test
 test: $(TB_PASS)

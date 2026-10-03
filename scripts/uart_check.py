@@ -69,19 +69,20 @@ class Serial:
         return line + b"\n"
 
 
-def wait_for(ser, predicate, timeout):
-    """Returns the first status line satisfying predicate; ignores anything else. timeout=None waits forever."""
+def wait_for(ser, predicate, timeout, parse=parse_status):
+    """Returns the first parsed line satisfying predicate; ignores anything else. timeout=None waits forever."""
     deadline = None if timeout is None else time.monotonic() + timeout
     while True:
-        st = parse_status(ser.readline(deadline))
+        st = parse(ser.readline(deadline))
         if st and predicate(st):
             return st
 
 
-def query(ser, timeout=1.0):
+def query(ser, timeout=1.0, parse=parse_status):
+    """Sends '?' and returns the next line that `parse` accepts."""
     ser.flush_input()
     ser.write(b"?")
-    return wait_for(ser, lambda st: True, timeout)
+    return wait_for(ser, lambda st: True, timeout, parse)
 
 
 def guided_buttons(ser, timeout=60):

@@ -51,6 +51,12 @@ The first `make flash` on a machine dumps whatever was in flash to `flash-backup
 | `make flash` | ~2 min | ~7 s |
 | Flash boot (reconfigure until the design answers) | ~4 s | ~30 ms |
 
+Hardware check: `make -C designs/bram_check hwtest` preloads 32 block RAMs (1,024 content frames
+across both chip halves and both clock-region rows) with a location-unique pattern. It then has
+the FPGA verify every word after a compact JTAG load, a full JTAG load and a compact flash boot,
+and runs a self-test that a corrupted word is detected. All pass. Designs dominated by RAM
+contents shrink less (this one is 1.05 MB, 2x smaller).
+
 To use the full bitstream, pass `LOAD_BIT=build/top.bit`, e.g. `make prog LOAD_BIT=build/top.bit`.
 `python3 scripts/xc7bit.py info <file.bit>` prints a bitstream's configuration commands.
 
@@ -73,6 +79,7 @@ mk/openxc7.mk            synth / place-and-route / bitstream / program rules
 mk/sim.mk                self-checking iverilog testbenches (must print PASS last)
 lib/rtl, lib/sim         reusable debounce + UART modules and their testbenches
 designs/<name>/          rtl/, sim/, constr/*.xdc, Makefile (copy cmod_a7_demo to start)
+designs/bram_check/      block RAM initialisation check (`make hwtest`), see Fast loading
 scripts/                 installer, USB setup/attach, UART checker
 tests/                   tests for the host scripts
 ```
