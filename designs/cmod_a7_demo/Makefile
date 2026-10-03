@@ -5,7 +5,7 @@
 #   make buttons  guided button test (you press, the script verifies)
 TOP    := top
 LIB    := ../../lib/rtl
-RTL    := rtl/top.v $(LIB)/debounce.v $(LIB)/uart_tx.v $(LIB)/uart_rx.v
+RTL    := rtl/top.v $(LIB)/debounce.v $(LIB)/uart_tx.v $(LIB)/uart_rx.v $(LIB)/uart_line_tx.v
 XDC    := constr/cmod_a7.xdc
 TB_DIR := sim
 

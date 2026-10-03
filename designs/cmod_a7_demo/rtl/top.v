@@ -54,37 +54,19 @@ module top #(
   assign led0_g = ~(lit && (color == 2 || color == 4));
   assign led0_b = ~(lit && (color == 3 || color == 4));
 
-  // UART status reporting
-  wire       rx_valid, tx_ready;
+  // UART status reporting. The line is latched when sending starts; an event that arrives on
+  // that same cycle (e.g. a BTN1 press, before the new colour is visible) queues another line.
+  wire       rx_valid, line_busy;
   wire [7:0] rx_data;
   uart_rx #(.CLKS_PER_BIT(CLKS_PER_BIT)) u_rx (.clk(sysclk), .rx(uart_txd_in), .valid(rx_valid), .data(rx_data));
 
   wire report = (rx_valid && rx_data == "?") || |press_edge || |release_edge;
-  reg  pending = 1'b0, sending = 1'b0;
-  reg  [4:0] idx = 0;
-  reg  snap_b0 = 1'b0, snap_b1 = 1'b0;
-  reg  [2:0] snap_color = 0;
+  reg  pending = 1'b0;
+  always @(posedge sysclk)
+    if (!line_busy && pending) pending <= report;
+    else if (report)           pending <= 1'b1;
 
-  wire [8*LINE_LEN-1:0] line = {"CMODA7 OK B0=", "0" + snap_b0, " B1=", "0" + snap_b1,
-                                " C=", "0" + snap_color, 8'h0D, 8'h0A};
-  wire [7:0] tx_char = line[8*(LINE_LEN-1-idx) +: 8];
-
-  uart_tx #(.CLKS_PER_BIT(CLKS_PER_BIT)) u_tx (
-    .clk(sysclk), .valid(sending), .data(tx_char), .ready(tx_ready), .tx(uart_rxd_out));
-
-  always @(posedge sysclk) begin
-    if (!sending && pending) begin
-      // Start a line from a snapshot; an event arriving now queues the next line.
-      {snap_b0, snap_b1, snap_color} <= {pressed[0], pressed[1], color};
-      sending <= 1'b1;
-      idx     <= 0;
-      pending <= report;
-    end else begin
-      if (report) pending <= 1'b1;
-      if (sending && tx_ready) begin
-        idx <= idx + 1'b1;
-        if (idx == LINE_LEN - 1) sending <= 1'b0;
-      end
-    end
-  end
+  uart_line_tx #(.CLKS_PER_BIT(CLKS_PER_BIT), .LEN(LINE_LEN)) u_line (
+    .clk(sysclk), .start(pending), .busy(line_busy), .tx(uart_rxd_out),
+    .line({"CMODA7 OK B0=", "0" + pressed[0], " B1=", "0" + pressed[1], " C=", "0" + color, 8'h0D, 8'h0A}));
 endmodule
