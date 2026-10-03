@@ -6,7 +6,9 @@
 set -euo pipefail
 
 HWID="${HWID:-0403:6010}"
+# Absolute paths: Windows directories aren't always on WSL's PATH (appendWindowsPath=false).
 USBIPD="${USBIPD:-/mnt/c/Program Files/usbipd-win/usbipd.exe}"
+POWERSHELL="${POWERSHELL:-/mnt/c/Windows/System32/WindowsPowerShell/v1.0/powershell.exe}"
 
 device_line() { "$USBIPD" list | tr -d '\r' | sed -n '/^Connected:/,/^$/p' | grep -i " $HWID " || true; }
 in_wsl()      { lsusb -d "$HWID" >/dev/null 2>&1; }
@@ -19,7 +21,7 @@ echo "Windows sees: $line"
 
 if [[ "$line" == *"Not shared"* ]]; then
   echo "Sharing device with WSL (approve the Windows admin prompt)..."
-  powershell.exe -NoProfile -Command \
+  "$POWERSHELL" -NoProfile -Command \
     "Start-Process -FilePath '$(wslpath -w "$USBIPD")' -Verb RunAs -Wait -WindowStyle Hidden -ArgumentList 'bind','--hardware-id','$HWID'"
   [[ "$(device_line)" != *"Not shared"* ]] || { echo "Bind failed or was declined." >&2; exit 1; }
 fi

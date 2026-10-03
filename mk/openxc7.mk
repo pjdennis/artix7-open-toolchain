@@ -1,6 +1,6 @@
 # openXC7 build + openFPGALoader programming rules.
 # Inputs: TOP, RTL (synthesis sources), XDC, and a board file (boards/*.mk) providing
-#         PART, FAMILY, CHIPDB_DIE, BOARD, CLK_MHZ.
+#         PART, FAMILY, CHIPDB_DIE, BOARD, CLK_MHZ, FLASH_BYTES.
 include $(dir $(lastword $(MAKEFILE_LIST)))tools.mk
 
 BUILD  ?= build
@@ -9,7 +9,11 @@ DB     := $(PRJXRAY_DB)/$(FAMILY)
 BIT    := $(BUILD)/$(TOP).bit
 LOADER := openFPGALoader -b $(BOARD)
 
-.PHONY: bit prog flash detect reset clean
+# The first flash write on a machine saves whatever was there before (e.g. a Vivado design).
+BACKUP_DIR := $(REPO_ROOT)/flash-backups
+BACKUPS    := $(BACKUP_DIR)/$(BOARD)-first.bin
+
+.PHONY: bit prog flash backup-flash detect reset clean
 bit: $(BIT)
 
 $(BUILD)/$(TOP).json: $(RTL)
@@ -33,8 +37,15 @@ detect:
 prog: $(BIT)                # load into FPGA SRAM (lost on power-off)
 	$(LOADER) $(BIT)
 
-flash: $(BIT)               # write QSPI flash; FPGA loads it at power-up
+flash: $(BIT) | $(BACKUPS)  # write QSPI flash; FPGA loads it at power-up
 	$(LOADER) -f --verify $(BIT)
+$(BACKUPS):
+	@mkdir -p $(BACKUP_DIR)
+	$(LOADER) --dump-flash --file-size $(FLASH_BYTES) $@.tmp && mv $@.tmp $@
+
+backup-flash:               # timestamped copy of the current flash contents
+	@mkdir -p $(BACKUP_DIR)
+	$(LOADER) --dump-flash --file-size $(FLASH_BYTES) $(BACKUP_DIR)/$(BOARD)-$$(date +%Y%m%d-%H%M%S).bin
 
 reset:                      # reconfigure the FPGA from flash
 	$(LOADER) -r
