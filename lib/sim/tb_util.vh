@@ -1,5 +1,6 @@
 // Shared testbench helpers. Testbenches must end with `TB_PASS; mk/sim.mk requires the final
 // log line to be exactly "PASS" so a testbench that stops early never counts as passing.
+// Macro parameters end in '_' because iverilog also expands them inside string literals.
 `ifndef TB_UTIL_VH
 `define TB_UTIL_VH
 
@@ -9,7 +10,6 @@
     $fatal(1); \
   end
 
-// (iverilog expands macro arguments inside string literals, hence the unusual parameter names)
 `define CHECK_EQ(actual_, expected_, msg_) \
   if ((actual_) !== (expected_)) begin \
     $display("FAIL %s:%0d @%0t: %s: got %0h, expected %0h", `__FILE__, `__LINE__, $time, msg_, actual_, expected_); \
@@ -19,9 +19,9 @@
 `define TB_PASS begin $display("PASS"); $finish(0); end
 
 // Free-running clock and a watchdog so a hung testbench fails instead of running forever.
-`define TB_CLOCK(clk, half_period, timeout) \
-  initial clk = 1'b0; \
-  always #(half_period) clk = ~clk; \
-  initial begin #(timeout); $display("FAIL: timeout"); $fatal(1); end
+`define TB_CLOCK(clk_, half_period_, timeout_) \
+  initial clk_ = 1'b0; \
+  always #(half_period_) clk_ = ~clk_; \
+  initial begin #(timeout_); $display("FAIL: timeout"); $fatal(1); end
 
 `endif

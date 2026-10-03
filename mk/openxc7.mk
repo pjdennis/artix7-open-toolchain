@@ -19,7 +19,7 @@ $(BUILD)/$(TOP).json: $(RTL)
 $(BUILD)/$(TOP).fasm: $(BUILD)/$(TOP).json $(XDC)
 	nextpnr-xilinx -q -l $(BUILD)/nextpnr.log --chipdb $(CHIPDB) --device $(PART) --freq $(CLK_MHZ) \
 	  -o xdc=$(XDC) -o fasm=$@ --json $< --report $(BUILD)/report.json
-	@grep -E "Max frequency|Device utilisation" -A0 $(BUILD)/nextpnr.log | sort -u
+	@grep "Max frequency" $(BUILD)/nextpnr.log | tail -n1
 
 $(BUILD)/$(TOP).frames: $(BUILD)/$(TOP).fasm
 	fasm2frames --part $(PART) --db-root $(DB) $< > $@
