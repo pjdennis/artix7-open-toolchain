@@ -28,10 +28,15 @@ make buttons    # guided test: you press BTN0/BTN1, the script verifies the repo
 make flash      # write QSPI flash (~7 s incl. verify); boots from flash in ~30 ms
 make reset      # reconfigure the FPGA from flash
 make detect     # show the JTAG chain (expect IDCODE 0x0362D093)
-make backup-flash   # timestamped dump of the 4 MiB flash into flash-backups/
+make backup-flash   # timestamped dump of the 4 MiB flash (see below for where)
 ```
 
-The first `make flash` on a machine dumps whatever was in flash to `flash-backups/<board>-first.bin`.
+The first `make flash` on a machine dumps whatever was in flash to `<board>-first.bin` in
+`~/.cache/fpga-flash-backups/` (or `$XDG_CACHE_HOME/fpga-flash-backups/`). Backups are per user, not per
+repository, because a design in any repository may be the first to write the board's flash.
+
+Every bitstream build writes `build/KIT_VERSION`, recording the kit commit and toolchain releases that
+produced it.
 
 ## Fast loading
 
@@ -59,6 +64,26 @@ contents shrink less (this one is 1.05 MB, 2x smaller).
 
 To use the full bitstream, pass `LOAD_BIT=build/top.bit`, e.g. `make prog LOAD_BIT=build/top.bit`.
 `python3 scripts/xc7bit.py info <file.bit>` prints a bitstream's configuration commands.
+
+## Using the kit from another repository
+
+A design can live in any repository and include the kit's make files. `source env.sh` sets
+`FPGA_KIT` to the kit's location (add it to `~/.bashrc` to make it permanent). A design directory
+needs only its sources and a short Makefile:
+
+```make
+TOP    := top
+RTL    := rtl/top.v $(FPGA_KIT)/lib/rtl/uart_rx.v   # kit library modules are optional
+XDC    := constr/top.xdc
+TB_DIR := sim                                         # tb_*.v testbenches; `include "tb_util.vh"` works
+include $(FPGA_KIT)/boards/cmod_a7_35t.mk
+include $(FPGA_KIT)/mk/sim.mk
+include $(FPGA_KIT)/mk/openxc7.mk
+```
+
+All the targets above (`test`, `bit`, `prog`, `flash`, `reset`, `backup-flash`, ...) then work in that
+directory, and build output stays in its `build/`. `tests/test_external_design.py` builds such a design
+from a temporary directory to keep this working.
 
 ## Demo design (`designs/cmod_a7_demo`)
 

@@ -15,7 +15,8 @@ BITREAD := bitread --part_file $(PART_YAML) -C -z
 LOADER := openFPGALoader -b $(BOARD)
 
 # The first flash write on a machine saves whatever was there before (e.g. a Vivado design).
-BACKUP_DIR := $(KIT_ROOT)/flash-backups
+# Backups are per user, not per repository, since any design may be the first to write flash.
+BACKUP_DIR ?= $(or $(XDG_CACHE_HOME),$(HOME)/.cache)/fpga-flash-backups
 BACKUPS    := $(BACKUP_DIR)/$(BOARD)-first.bin
 
 .PHONY: bit prog flash backup-flash detect reset clean
@@ -35,6 +36,8 @@ $(BUILD)/$(TOP).frames: $(BUILD)/$(TOP).fasm
 
 $(BIT): $(BUILD)/$(TOP).frames
 	xc7frames2bit --part_file $(PART_YAML) --part_name $(PART) --frm_file $< --output_file $@
+	@{ echo "kit $$(git -C $(KIT_ROOT) describe --always --dirty --abbrev=12 2>/dev/null || echo unknown) ($(KIT_ROOT))"; \
+	   cat $(KIT_ROOT)/TOOLCHAIN_VERSIONS; } > $(BUILD)/KIT_VERSION
 
 # Only the frames that carry data (see scripts/xc7bit.py), checked by decoding both bitstreams.
 $(FAST_BIT): $(BIT)
