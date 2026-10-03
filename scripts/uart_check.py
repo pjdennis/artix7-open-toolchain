@@ -57,9 +57,10 @@ class Serial:
         os.write(self.fd, data)
 
     def readline(self, deadline):
+        """Returns the next line; deadline is a time.monotonic() value, or None to wait forever."""
         while b"\n" not in self.buf:
-            remaining = deadline - time.monotonic()
-            if remaining <= 0 or not select.select([self.fd], [], [], remaining)[0]:
+            remaining = None if deadline is None else deadline - time.monotonic()
+            if remaining is not None and remaining <= 0 or not select.select([self.fd], [], [], remaining)[0]:
                 raise TimeoutError("no response from board")
             self.buf += os.read(self.fd, 256)
         line, _, self.buf = self.buf.partition(b"\n")
@@ -67,8 +68,8 @@ class Serial:
 
 
 def wait_for(ser, predicate, timeout):
-    """Returns the first status line satisfying predicate; ignores anything else."""
-    deadline = time.monotonic() + timeout
+    """Returns the first status line satisfying predicate; ignores anything else. timeout=None waits forever."""
+    deadline = None if timeout is None else time.monotonic() + timeout
     while True:
         st = parse_status(ser.readline(deadline))
         if st and predicate(st):
@@ -108,8 +109,8 @@ def main():
                 guided_buttons(ser)
                 print("Button test passed.")
             else:
-                while True:
-                    print(wait_for(ser, lambda st: True, timeout=float("inf")), flush=True)
+                while True:  # raw lines, so malformed or out-of-range reports stay visible
+                    print(ser.readline(deadline=None).decode(errors="replace").rstrip(), flush=True)
     except TimeoutError as e:
         sys.exit(f"FAIL: {e}")
     except KeyboardInterrupt:

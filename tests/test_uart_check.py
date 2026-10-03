@@ -1,6 +1,7 @@
 import os
 import sys
 import threading
+import tty
 import unittest
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "scripts"))
@@ -17,6 +18,7 @@ class FakeBoard:
     def __init__(self, on_query=None, events=()):
         self.master, self.slave = os.openpty()  # slave held open so master reads don't hit EIO
         self.port = os.ttyname(self.slave)
+        tty.setraw(self.slave)  # raw before events are written, as a real serial port would be
         self.on_query = on_query
         self.events = list(events)
         self.thread = threading.Thread(target=self.run, daemon=True)
@@ -76,6 +78,18 @@ class WaitForTest(unittest.TestCase):
         with uart_check.Serial(board.port) as ser:
             st = uart_check.wait_for(ser, lambda s: s["C"] == 1, timeout=2)
         self.assertEqual(st, {"B0": 0, "B1": 1, "C": 1})
+        board.close()
+
+    def test_wait_for_without_timeout(self):
+        board = FakeBoard(events=[status(1, 0, 0)])
+        with uart_check.Serial(board.port) as ser:
+            self.assertEqual(uart_check.wait_for(ser, lambda s: True, timeout=None), {"B0": 1, "B1": 0, "C": 0})
+        board.close()
+
+    def test_readline_returns_unparseable_lines_for_watch(self):
+        board = FakeBoard(events=[b"CMODA7 OK B0=0 B1=0 C=7\r\n"])
+        with uart_check.Serial(board.port) as ser:
+            self.assertEqual(ser.readline(deadline=None), b"CMODA7 OK B0=0 B1=0 C=7\r\n")
         board.close()
 
     def test_wait_for_times_out(self):
