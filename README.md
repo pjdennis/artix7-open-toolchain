@@ -25,7 +25,7 @@ make            # simulate, then build build/top.bit and build/top.fast.bit (~12
 make prog       # load into FPGA SRAM in ~0.25 s (lost at power-off)
 make hwcheck    # ask the running design for its status over the USB-UART
 make buttons    # guided test: you press BTN0/BTN1, the script verifies the reports
-make flash      # write QSPI flash (~7 s incl. verify); boots from flash in ~30 ms
+make flash      # write QSPI flash (~7 s incl. verify); boots from flash in ~0.1–0.4 s
 make reset      # reconfigure the FPGA from flash
 make detect     # show the JTAG chain (expect IDCODE 0x0362D093)
 make backup-flash   # timestamped dump of the 4 MiB flash (see below for where)
@@ -49,12 +49,14 @@ produced it.
 - **Faster flash clock.** `OSCFSEL` in the board file sets the clock the FPGA uses to read flash
   at boot (Vivado's ConfigRate). The encoding isn't documented; these values were measured on
   this board: 0 = 3.3 MHz (default), 4 = 23 MHz, 6 = ~31 MHz (used), 8 = ~37 MHz.
+- **No JTAG/flash race.** See [below](#the-jtagflash-race). The flash boot waits `BOOT_DELAY_MS`
+  (100 ms) before writing anything, and a JTAG load redoes startup if a flash design got there first.
 
 | | Full bitstream, default clock | Fast |
 |---|---|---|
 | `make prog` | 3.35 s | 0.25 s |
 | `make flash` | ~2 min | ~7 s |
-| Flash boot (reconfigure until the design answers) | ~4 s | ~30 ms |
+| Flash boot (reconfigure until the design answers) | ~4 s | 0.12–0.4 s (median 0.14 s); ~30 ms without the race guard |
 
 Hardware check: `make -C designs/bram_check hwtest` preloads 32 block RAMs (1,024 content frames
 across both chip halves and both clock-region rows) with a location-unique pattern. It then has
@@ -84,6 +86,32 @@ include $(FPGA_KIT)/mk/openxc7.mk
 All the targets above (`test`, `bit`, `prog`, `flash`, `reset`, `backup-flash`, ...) then work in that
 directory, and build output stays in its `build/`. `tests/test_external_design.py` builds such a design
 from a temporary directory to keep this working.
+
+## The JTAG/flash race
+
+A JTAG load (`make prog`) starts with JPROGRAM, which clears the FPGA and makes it start booting from
+its flash, as at power-up, while openFPGALoader is still preparing the JTAG data (~20 ms). If that flash
+boot finishes first, the JTAG design is written over a design that has already started:
+
+- **Register initial values are not applied.** For example, `reg [2:0] c = 0` came up as 7, and a FIFO's
+  pointers started 218 entries apart.
+- **A compact bitstream leaves the started design's other frames in place.** For example, 89 of the
+  demo's 155 frames were not overwritten by another design.
+
+Measured with the flash-boot fix off (a 30 ms flash boot) and initial values checked after each load by
+a probe design: 7 of 12 and 3 of 10 JTAG loads were wrong; with the flash erased, 16 of 16 were right.
+Booting *from* flash is always right.
+
+`build/<top>.fast.bit` therefore carries two guards (`scripts/xc7bit.py`):
+
+- **Boot delay** (`--boot-delay-ms`, `BOOT_DELAY_MS` = 100). NOOPs before the clock setting, read at
+  the slow default clock, so a flash boot writes nothing for ~100 ms. The JTAG load always gets there
+  first, into a cleared FPGA. With such an image in flash: 20 of 20 JTAG loads right, and the JTAG
+  design stays put. It costs ~0.1 s of power-up time and 40 KB.
+- **Restart** (`--restart`). SHUTDOWN and AGHIGH after the first CRC reset, so that a JTAG load redoes
+  startup if a flash image made elsewhere got there first. Initial values were then right in 10 of 10
+  loads (against 7 of 10 without it), and it does nothing on a cleared FPGA (10 of 10). It can't remove
+  the other design's leftover frames, so erase such a flash before relying on `make prog`.
 
 ## Demo design (`designs/cmod_a7_demo`)
 
@@ -116,16 +144,14 @@ tests/                   tests for the host scripts
 - **Chip database:** the openXC7 release keeps chipdbs in `openxc7/chipdb/`, not where
   nextpnr looks by default, so the build passes `--chipdb`. An xc7a35t uses the xc7a50t die file,
   so nextpnr's utilisation percentages are against the 50T. Stay within the 35T's 20,800 LUTs.
-- **Register initial values after JTAG loads:** while the flash still held a Vivado-built
-  design, every `make prog` came up with register initial values ignored (e.g. `reg [2:0] c = 0`
-  powered up as 7). Booting the same bitstream from flash was correct. After the flash was
-  rewritten with an openXC7 design, JTAG loads were correct too, and have stayed correct.
-  The likely cause is the old flash image's boot interfering with the JTAG load, but this
-  wasn't confirmed. If initial values look wrong after `make prog`, run `make flash` once.
+- **Register initial values after JTAG loads:** see [the JTAG/flash race](#the-jtagflash-race).
+  The kit's own flash images avoid it. With a flash image made elsewhere that boots quickly (for
+  example a Vivado design with a high ConfigRate), erase the flash
+  (`openFPGALoader -b cmoda7_35t --bulk-erase`) before relying on `make prog`.
 - **Startup glitches:** don't rely on button or UART state in the first few milliseconds after
   configuration.
 - **`bit2fasm` in the openXC7 release** calls `bitread` through a `/nix/store/.../sh` path that
   doesn't exist. Run `bitread` yourself and feed the `.bits` file to the disassembler instead.
 - **Flash read width:** flash boot still reads one bit at a time. Four-bit (quad) mode would need
-  bus-width detection words in the bitstream and the flash's quad-enable bit set, and at ~30 ms
-  per boot it isn't worth it.
+  bus-width detection words in the bitstream and the flash's quad-enable bit set. With the boot delay
+  dominating, it isn't worth it.

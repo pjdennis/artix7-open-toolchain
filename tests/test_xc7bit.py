@@ -101,6 +101,47 @@ class CompactTest(unittest.TestCase):
             xc7bit.compact(bf, self.FRAMES)
 
 
+def words(bf):
+    return [w for hdr, payload in bf.packets for w in (hdr, *payload)]
+
+
+class JtagRaceTest(unittest.TestCase):
+    """A JTAG load restarts the FPGA's boot from flash; see xc7bit.add_restart and add_boot_delay."""
+
+    def test_restart_sequence_follows_the_first_crc_reset(self):
+        bf = xc7bit.BitFile.parse(full_bitstream([frame(1)]))
+        xc7bit.add_restart(bf)
+        w = words(bf)
+        i = w.index(xc7bit.type1_write(xc7bit.REG_CMD, 1))  # the first command: RCRC
+        self.assertEqual(w[i:i + 2], t1(xc7bit.REG_CMD, xc7bit.CMD_RCRC))
+        expected = (t1(xc7bit.REG_CMD, xc7bit.CMD_SHUTDOWN) + [NOOP] * 100 + t1(xc7bit.REG_CMD, xc7bit.CMD_RCRC)
+                    + [NOOP] * 2 + t1(xc7bit.REG_CMD, xc7bit.CMD_AGHIGH))
+        self.assertEqual(w[i + 2:i + 2 + len(expected)], expected)
+        self.assertLess(i, w.index(t1(xc7bit.REG_COR0, 0)[0]))
+        # everything else is untouched
+        before = words(xc7bit.BitFile.parse(full_bitstream([frame(1)])))
+        self.assertEqual(w[:i + 2] + w[i + 2 + len(expected):], before)
+
+    def test_boot_delay_noops_come_before_the_clock_setting(self):
+        bf = xc7bit.BitFile.parse(full_bitstream([frame(1)]))
+        before = words(bf)
+        xc7bit.add_boot_delay(bf, 100)
+        w = words(bf)
+        n = round(0.100 * xc7bit.DEFAULT_CCLK_HZ / 32)
+        cor0 = w.index(t1(xc7bit.REG_COR0, 0)[0])
+        self.assertEqual(w[cor0 - n:cor0], [NOOP] * n)
+        self.assertEqual(len(w), len(before) + n)
+        self.assertEqual(xc7bit.BitFile.parse(bf.serialize()).packets, bf.packets)
+
+    def test_requires_the_expected_header(self):
+        bf = xc7bit.BitFile.parse(bit_file([NOOP] + TRAILER))
+        with self.assertRaises(ValueError):
+            xc7bit.add_boot_delay(bf, 10)
+        bf = xc7bit.BitFile.parse(bit_file(t1(xc7bit.REG_COR0, 0x02003FE5)))
+        with self.assertRaises(ValueError):
+            xc7bit.add_restart(bf)
+
+
 class ConfigRateTest(unittest.TestCase):
     def test_sets_oscfsel_only(self):
         bf = xc7bit.BitFile.parse(full_bitstream([frame(1)]))
