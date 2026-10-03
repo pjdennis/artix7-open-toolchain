@@ -1,12 +1,17 @@
 # openXC7 build + openFPGALoader programming rules.
 # Inputs: TOP, RTL (synthesis sources), XDC, and a board file (boards/*.mk) providing
-#         PART, FAMILY, CHIPDB_DIE, BOARD, CLK_MHZ, FLASH_BYTES.
+#         PART, FAMILY, CHIPDB_DIE, BOARD, CLK_MHZ, FLASH_BYTES and optionally OSCFSEL.
+# prog/flash use the compact bitstream ($(TOP).fast.bit); pass LOAD_BIT=build/$(TOP).bit for the full one.
 include $(dir $(lastword $(MAKEFILE_LIST)))tools.mk
 
 BUILD  ?= build
 CHIPDB ?= $(OPENXC7_ROOT)/chipdb/chipdb-$(CHIPDB_DIE).bin
 DB     := $(PRJXRAY_DB)/$(FAMILY)
 BIT    := $(BUILD)/$(TOP).bit
+FAST_BIT := $(BUILD)/$(TOP).fast.bit
+LOAD_BIT ?= $(FAST_BIT)
+PART_YAML := $(DB)/$(PART)/part.yaml
+BITREAD := bitread --part_file $(PART_YAML) -C -z
 LOADER := openFPGALoader -b $(BOARD)
 
 # The first flash write on a machine saves whatever was there before (e.g. a Vivado design).
@@ -14,7 +19,7 @@ BACKUP_DIR := $(REPO_ROOT)/flash-backups
 BACKUPS    := $(BACKUP_DIR)/$(BOARD)-first.bin
 
 .PHONY: bit prog flash backup-flash detect reset clean
-bit: $(BIT)
+bit: $(BIT) $(FAST_BIT)
 
 $(BUILD)/$(TOP).json: $(RTL)
 	@mkdir -p $(BUILD)
@@ -29,16 +34,23 @@ $(BUILD)/$(TOP).frames: $(BUILD)/$(TOP).fasm
 	fasm2frames --part $(PART) --db-root $(DB) $< > $@
 
 $(BIT): $(BUILD)/$(TOP).frames
-	xc7frames2bit --part_file $(DB)/$(PART)/part.yaml --part_name $(PART) --frm_file $< --output_file $@
+	xc7frames2bit --part_file $(PART_YAML) --part_name $(PART) --frm_file $< --output_file $@
+
+# Only the frames that carry data (see scripts/xc7bit.py), checked by decoding both bitstreams.
+$(FAST_BIT): $(BIT)
+	$(BITREAD) -o $(BIT).frames $< > /dev/null
+	python3 $(REPO_ROOT)/scripts/xc7bit.py compact $< $(BIT).frames $@ $(if $(OSCFSEL),--oscfsel $(OSCFSEL))
+	$(BITREAD) -o $@.frames $@ > /dev/null
+	@cmp -s $(BIT).frames $@.frames || { rm -f $@; echo "*** $@ decodes to different frames than $<"; exit 1; }
 
 detect:
 	$(LOADER) --detect
 
-prog: $(BIT)                # load into FPGA SRAM (lost on power-off)
-	$(LOADER) $(BIT)
+prog: $(LOAD_BIT)           # load into FPGA SRAM (lost on power-off)
+	$(LOADER) $(LOAD_BIT)
 
-flash: $(BIT) | $(BACKUPS)  # write QSPI flash; FPGA loads it at power-up
-	$(LOADER) -f --verify $(BIT)
+flash: $(LOAD_BIT) | $(BACKUPS)  # write QSPI flash; FPGA loads it at power-up
+	$(LOADER) -f --verify $(LOAD_BIT)
 $(BACKUPS):
 	@mkdir -p $(BACKUP_DIR)
 	$(LOADER) --dump-flash --file-size $(FLASH_BYTES) $@.tmp && mv $@.tmp $@
