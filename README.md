@@ -113,6 +113,34 @@ Booting *from* flash is always right.
   loads (against 7 of 10 without it), and it does nothing on a cleared FPGA (10 of 10). It can't remove
   the other design's leftover frames, so erase such a flash before relying on `make prog`.
 
+### Possible improvement: compressed JTAG bitstreams
+
+The boot delay costs ~0.1–0.4 s at power-up, and doesn't help with a fast flash image made elsewhere (whose
+leftover frames survive a compact JTAG load). A JTAG bitstream that overwrites *every* frame would remove
+both limits. The uncompressed `build/<top>.bit` does that, but takes 3.3 s to load.
+
+Vivado's compressed bitstreams do it cheaply. Frame contents that repeat (overwhelmingly all-zero frames)
+are sent once and then written to each further address with a few-word multiple frame write (the MFWR
+register). For the Cmod's 5,408 frames that's roughly 110 KB on top of the data frames, so `make prog`
+would take ~0.4–0.5 s. Combined with `--restart`, a JTAG load would then give the same result whether or
+not a flash design had started, so:
+
+- the boot delay could go (flash boot back to ~30 ms);
+- flash images from Vivado or older kits would no longer need erasing before JTAG work.
+
+Flash images wouldn't change: at power-up the memory really is clear, so compact frames suffice.
+
+Not done because:
+
+- **MFWR isn't documented.** UG470 names the register but not the packet sequence (padding words,
+  interaction with the frame buffer). It would need to come from Project X-Ray or other reverse-engineering,
+  or from experiments on a board. A wrong sequence would most likely just fail configuration (DONE stays low).
+- **Overwriting is hard to verify.** A JTAG design normally rewrites the I/O frames, so leftover logic
+  can't reach a pin. A test needs a loopback: a jumper from a pin that only the flash design drives to one
+  the JTAG design reads, with the driving pin's frames outside the JTAG design (or someone watching an LED
+  only the flash design drives).
+- `bitread` may not decode MFWR, so the build's frame comparison would need its own decoder.
+
 ## Demo design (`designs/cmod_a7_demo`)
 
 | | Behaviour |
